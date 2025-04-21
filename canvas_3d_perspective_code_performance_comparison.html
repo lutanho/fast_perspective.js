@@ -1,0 +1,420 @@
+<!doctype html>
+
+<html>
+
+    <head>
+        <title>Canvas 3d perspective code performance comparison</title>  
+    </head>
+
+    <body>
+        
+        <script>
+//--Start of perspective.js 
+
+(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.Perspective = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+// Copyright 2010 futomi  http://www.html5.jp/
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// perspective.js v0.0.2
+// 2010-08-28
+//
+// This file was modified by Fabien LOISON <http://www.flozz.fr/>
+
+
+/* -------------------------------------------------------------------
+ * define objects (name space) for this library.
+ * ----------------------------------------------------------------- */
+
+var html5jp = window.html5jp || {};
+
+(function() {
+
+    /* -------------------------------------------------------------------
+     * constructor
+     * ----------------------------------------------------------------- */
+    html5jp.perspective = function(ctxd, image) {
+        // check the arguments
+        if( ! ctxd || ! ctxd.strokeStyle ) { return; }
+        if( ! image || ! image.width || ! image.height ) { return; }
+        // prepare a <canvas> for the image
+        var cvso = document.createElement('canvas');
+        cvso.width = parseInt(image.width);
+        cvso.height = parseInt(image.height);
+        var ctxo = cvso.getContext('2d');
+        ctxo.drawImage(image, 0, 0, cvso.width, cvso.height);
+        // prepare a <canvas> for the transformed image
+        var cvst = document.createElement('canvas');
+        cvst.width = ctxd.canvas.width;
+        cvst.height = ctxd.canvas.height;
+        var ctxt = cvst.getContext('2d');
+        // parameters
+        this.p = {
+            ctxd: ctxd,
+            cvso: cvso,
+            ctxo: ctxo,
+            ctxt: ctxt
+        }
+    };
+
+    /* -------------------------------------------------------------------
+     * prototypes
+     * ----------------------------------------------------------------- */
+
+    var proto = html5jp.perspective.prototype;
+
+    /* -------------------------------------------------------------------
+     * public methods
+     * ----------------------------------------------------------------- */
+
+    proto.draw = function(points) {
+        var d0x = points[0][0];
+        var d0y = points[0][1];
+        var d1x = points[1][0];
+        var d1y = points[1][1];
+        var d2x = points[2][0];
+        var d2y = points[2][1];
+        var d3x = points[3][0];
+        var d3y = points[3][1];
+        // compute the dimension of each side
+        var dims = [
+            Math.sqrt( Math.pow(d0x-d1x, 2) + Math.pow(d0y-d1y, 2) ), // top side
+            Math.sqrt( Math.pow(d1x-d2x, 2) + Math.pow(d1y-d2y, 2) ), // right side
+            Math.sqrt( Math.pow(d2x-d3x, 2) + Math.pow(d2y-d3y, 2) ), // bottom side
+            Math.sqrt( Math.pow(d3x-d0x, 2) + Math.pow(d3y-d0y, 2) )  // left side
+                ];
+        //
+        var ow = this.p.cvso.width;
+        var oh = this.p.cvso.height;
+        // specify the index of which dimension is longest
+        var base_index = 0;
+        var max_scale_rate = 0;
+        var zero_num = 0;
+        for( var i=0; i<4; i++ ) {
+            var rate = 0;
+            if( i % 2 ) {
+                rate = dims[i] / ow;
+            } else {
+                rate = dims[i] / oh;
+            }
+            if( rate > max_scale_rate ) {
+                base_index = i;
+                max_scale_rate = rate;
+            }
+            if( dims[i] == 0 ) {
+                zero_num ++;
+            }
+        }
+        if(zero_num > 1) { return; }
+        //
+        var step = 2;
+        var cover_step = step * 5;
+        //
+        var ctxo = this.p.ctxo;
+        var ctxt = this.p.ctxt;
+        ctxt.clearRect(0, 0, ctxt.canvas.width, ctxt.canvas.height);
+        if(base_index % 2 == 0) { // top or bottom side
+            var ctxl = this.create_canvas_context(ow, cover_step);
+            ctxl.globalCompositeOperation = "copy";
+            var cvsl = ctxl.canvas;
+            for( var y=0; y<oh; y+=step ) {
+                var r = y / oh;
+                var sx = d0x + (d3x-d0x) * r;
+                var sy = d0y + (d3y-d0y) * r;
+                var ex = d1x + (d2x-d1x) * r;
+                var ey = d1y + (d2y-d1y) * r;
+                var ag = Math.atan( (ey-sy) / (ex-sx) );
+                var sc = Math.sqrt( Math.pow(ex-sx, 2) + Math.pow(ey-sy, 2) ) / ow;
+                ctxl.setTransform(1, 0, 0, 1, 0, -y);
+                ctxl.drawImage(ctxo.canvas, 0, 0);
+                //
+                ctxt.translate(sx, sy);
+                ctxt.rotate(ag);
+                ctxt.scale(sc, sc);
+                ctxt.drawImage(cvsl, 0, 0);
+                //
+                ctxt.setTransform(1, 0, 0, 1, 0, 0);
+            }
+        } else if(base_index % 2 == 1) { // right or left side
+            var ctxl = this.create_canvas_context(cover_step, oh);
+            ctxl.globalCompositeOperation = "copy";
+            var cvsl = ctxl.canvas;
+            for( var x=0; x<ow; x+=step ) {
+                var r =  x / ow;
+                var sx = d0x + (d1x-d0x) * r;
+                var sy = d0y + (d1y-d0y) * r;
+                var ex = d3x + (d2x-d3x) * r;
+                var ey = d3y + (d2y-d3y) * r;
+                var ag = Math.atan( (sx-ex) / (ey-sy) );
+                var sc = Math.sqrt( Math.pow(ex-sx, 2) + Math.pow(ey-sy, 2) ) / oh;
+                ctxl.setTransform(1, 0, 0, 1, -x, 0);
+                ctxl.drawImage(ctxo.canvas, 0, 0);
+                //
+                ctxt.translate(sx, sy);
+                ctxt.rotate(ag);
+                ctxt.scale(sc, sc);
+                ctxt.drawImage(cvsl, 0, 0);
+                //
+                ctxt.setTransform(1, 0, 0, 1, 0, 0);
+            }
+        }
+        // set a clipping path and draw the transformed image on the destination canvas.
+        this.p.ctxd.save();
+        this.p.ctxd.drawImage(ctxt.canvas, 0, 0);
+        this._applyMask(this.p.ctxd, [[d0x, d0y], [d1x, d1y], [d2x, d2y], [d3x, d3y]]);
+        this.p.ctxd.restore();
+    }
+
+    /* -------------------------------------------------------------------
+     * private methods
+     * ----------------------------------------------------------------- */
+
+    proto.create_canvas_context = function(w, h) {
+        var canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        var ctx = canvas.getContext('2d');
+        return ctx;
+    };
+
+    proto._applyMask = function(ctx, points) {
+        ctx.beginPath();
+        ctx.moveTo(points[0][0], points[0][1]);
+        for( var i=1; i<points.length; i++ ) {
+            ctx.lineTo(points[i][0], points[i][1]);
+        }
+        ctx.closePath();
+        ctx.globalCompositeOperation = "destination-in";
+        ctx.fill();
+        ctx.globalCompositeOperation = "source-over";
+    };
+
+})();
+
+
+module.exports = html5jp.perspective;
+
+},{}]},{},[1])(1)
+});
+        
+//--End of perspective.js      
+        </script>    
+    
+<table cellpadding=4 cellspacing=0 border=1>
+<tr><td colspan=2 bgcolor=#cccccc>Canvas 3d perspective code performance comparison</td></tr>
+<tr><td>left side: drawing with code from<br />https://github.com/wanadev/perspective.js/<br />  
+        <canvas id="canvas"></canvas>
+</td>
+       
+
+        <script>
+var imgname="firefox.jpg";        
+            var canvas = document.getElementById("canvas");
+            var image = new Image();
+            image.onload = function() {
+                canvas.width = image.width;
+                canvas.height = image.height;
+                var ctx = canvas.getContext("2d");
+                var p = new Perspective(ctx, image);
+var startTime=new Date();
+if (imgname=="firefox.jpg")
+                p.draw([
+                        [30, 30],
+                        [image.width - 50, 50],
+                        [image.width - 70, image.height - 30],
+                        [10, image.height]
+                ]);
+else //grid.jpg
+                p.draw([
+                        [29, 85],
+                        [251, 64],
+                        [340, 290],
+                        [10, 340]
+                ]);                
+var endTime=new Date();
+document.getElementById("msg").innerHTML="Elapsed time: "+(endTime-startTime)+" ms";                
+            }
+image.src = imgname;            
+        </script>
+        
+        
+<td>right side: drawing with alternative code from<br />http://www.lutanho.net/goodies/<br />       
+<canvas id="canvas2"></canvas>
+</td></tr>
+<script>
+
+//--Start of alternative drawing method 
+
+function drawPerspective(ctx, img, l,t,r,b, x, y, d, s)
+{ // Copyright: Lutz Tautenhahn, 2019, http://www.lutanho.net/
+  // License: Apache License, Version 2.0
+  var i, xm, ym, x0, y0, x1, y1, x2, y2, x3, y3, sl, st, sr, sb, ep=0.01;
+  var w=r-l;
+  var h=b-t;
+  var xc=w/2;
+  var yc=h/2;
+  var m=[0,0];
+  var f=[0,0];
+  function LLI(r,a,b,c,d,e,f,g,h)
+  { var x=(a+c+e+g)/4;
+    var y=(b+d+f+h)/4;
+    r[0]=x-((a-c)*((f-y)*(g-x)-(e-x)*(h-y))-(e-g)*((b-y)*(c-x)-(a-x)*(d-y)))/((a-c)*(h-f)-(d-b)*(e-g));
+    r[1]=y-((b-d)*((e-x)*(h-y)-(f-y)*(g-x))-(f-h)*((a-x)*(d-y)-(b-y)*(c-x)))/((b-d)*(g-e)-(c-a)*(f-h));
+  };
+  LLI(m,x[0],y[0],x[2],y[2],x[1],y[1],x[3],y[3]);
+  xm=m[0];
+  ym=m[1];
+  if (d>0)
+  { if (Math.abs((x[0]-x[1])*(y[3]-y[2])-(y[0]-y[1])*(x[3]-x[2]))<ep)
+    { f[0]=xm+x[0]-x[1]+x[3]-x[2];
+      f[1]=ym+y[0]-y[1]+y[3]-y[2];
+    }
+    else LLI(f,x[0],y[0],x[1],y[1],x[3],y[3],x[2],y[2]);
+    LLI(m,f[0],f[1],xm,ym,x[1],y[1],x[2],y[2]);
+    x1=m[0];
+    y1=m[1];
+    LLI(m,f[0],f[1],xm,ym,x[3],y[3],x[0],y[0]);
+    x3=m[0];
+    y3=m[1];
+    if (Math.abs((x[1]-x[2])*(y[0]-y[3])-(y[1]-y[2])*(x[0]-x[3]))<ep)
+    { f[0]=xm+x[1]-x[2]+x[0]-x[3];
+      f[1]=ym+y[1]-y[2]+y[0]-y[3];
+    }
+    else LLI(f,x[1],y[1],x[2],y[2],x[0],y[0],x[3],y[3]);
+    LLI(m,f[0],f[1],xm,ym,x[0],y[0],x[1],y[1]);
+    x0=m[0];
+    y0=m[1];
+    LLI(m,f[0],f[1],xm,ym,x[3],y[3],x[2],y[2]);
+    x2=m[0];
+    y2=m[1];
+    drawPerspective(ctx, img, l,t,r-xc,b-yc, [x[0],x0,xm,x3], [y[0],y0,ym,y3], d-1, s);
+    drawPerspective(ctx, img, l+xc,t,r,b-yc, [x0,x[1],x1,xm], [y0,y[1],y1,ym], d-1, s);
+    drawPerspective(ctx, img, l,t+yc,r-xc,b, [x3,xm,x2,x[3]], [y3,ym,y2,y[3]], d-1, s);
+    drawPerspective(ctx, img, l+xc,t+yc,r,b, [xm,x1,x[2],x2], [ym,y1,y[2],y2], d-1, s);
+    return;
+  }
+  for (i=0; i<4; i++)
+  { x0=x[i]-xm;
+    y0=y[i]-ym;
+    x1=x[(i+1)%4]-xm;
+    y1=y[(i+1)%4]-ym;
+    ctx.save();
+    ctx.translate(xm, ym);
+    ctx.transform((x1-x0)/w,(y1-y0)/w,(xc*(x0-x1)/w-x0)/yc,(xc*(y0-y1)/w-y0)/yc, 0, 0);
+    ctx.beginPath();
+    ctx.moveTo(-xc-s, -yc-s);
+    ctx.lineTo(0, s);
+    ctx.lineTo(w-xc+s, -yc-s);
+    ctx.closePath();
+    ctx.clip();
+    if (i==1)
+    { ctx.translate(w/2-xm, h/2-ym);
+      ctx.transform(0,-1,1,0,0,0);
+      ctx.translate(h/2-ym,xm-w/2);
+      ctx.transform(h/w,0,0,w/h,0,0);
+    }
+    if (i==2)
+    { ctx.translate(w/2-xm, h/2-ym);
+      ctx.transform(-1,0,0,-1,0,0);
+      ctx.translate(w/2-xm, h/2-ym);
+    }
+    if (i==3)
+    { ctx.translate(w/2-xm, h/2-ym);
+      ctx.transform(0,1,-1,0,0,0);
+      ctx.translate(ym-h/2,w/2-xm);
+      ctx.transform(h/w,0,0,w/h,0,0);
+    }
+    sl=s+Math.min(l-s,0);
+    st=s+Math.min(t-s,0);
+    sr=2*s-Math.max(l-sl+w+2*s,img.width)+img.width;
+    sb=2*s-Math.max(t-st+h+2*s,img.height)+img.height;
+    ctx.drawImage(img, l-sl, t-st, w+sr, h+sb, -xc-sl,-yc-st, w+sr, h+sb);
+    ctx.restore();
+  }
+}
+
+//--End of alternative drawing method
+
+var canvas2= document.getElementById("canvas2");
+var image2 = new Image();
+var subs=3;
+var sm=1;
+
+image2.onload = function()
+{ canvas2.width = image2.width;
+  canvas2.height = image2.height;
+  var ctx2 = canvas2.getContext("2d");
+  ctx2.canvas.width=image2.width;
+  ctx2.canvas.height=image2.height;
+  var startTime2=new Date();
+  if (imgname=="firefox.jpg")
+    drawPerspective(ctx2, image2,  
+    0, 0, image2.width, image2.height,                     //image left, top, right, bottom
+    [30, image2.width-50, image2.width-70, 10],            //canvas x coordinates of 4 vertices of convex quadrilateral 
+    [30, 50,              image2.height-30, image2.height],//canvas y coordinates of 4 vertices of convex quadrilateral 
+    subs,                                                  //subdivisions (0,1,2,3,...)
+    sm);                                                   //smoothness (0,1,2,3)
+  else //grid.jpg
+    drawPerspective(ctx2, image2,  
+    0, 0, image2.width, image2.height,    //image left, top, right, bottom
+    [29,251,340,10],                      //canvas x coordinates of 4 vertices of convex quadrilateral
+    [85, 64, 290, 340],                   //canvas y coordinates of 4 vertices of convex quadrilateral 
+    subs,                                 //subdivisions (0,1,2,3,...)
+    sm);                                  //smoothness (0,1,2,3)
+
+
+  var endTime2=new Date();
+  document.getElementById("msg2").innerHTML="Elapsed time: "+(endTime2-startTime2)+" ms";
+}
+image2.src = imgname;
+
+function DrawImage(i)
+{ imgname=i; image.src=i; image2.src=i; 
+  if (i=="grid.jpg") document.getElementById("scrawl").style.display="inline";
+  else document.getElementById("scrawl").style.display="none";
+}
+function Subs(i) { subs=i; image2.onload(); }
+function Sm(i) { sm=i; image2.onload(); }
+</script>
+<tr><td>
+<span id="msg"></span>&nbsp;&nbsp;&nbsp;<input type="button" value="redraw" onclick="image.onload()" />
+</td><td>
+<span id="msg2"></span>&nbsp;&nbsp;&nbsp;<input type="button" value="redraw" onclick="image2.onload()" />
+</td></tr>
+<tr><td id="debug">
+<small>perspective.js is a JavaScript library which allows you<br />to transform a rectangle image into an arbitrary form<br />of quadrilateral on a canvas element. It is used to draw<br />an image using perspective on a canvas.</small>
+</td><td>
+Image: 
+<input type="radio" name="imgname" onclick="DrawImage('firefox.jpg')" value="firefox.jpg" checked />firefox.jpg
+<input type="radio" name="imgname" onclick="DrawImage('grid.jpg')" value="grid.jpg" />grid.jpg
+<br />
+Subdivisions: 
+<input type='radio' onclick="Subs(0)" name="subs" \>0 
+<input type='radio' onclick="Subs(1)" name="subs" \>1
+<input type='radio' onclick="Subs(2)" name="subs" \>2
+<input type='radio' onclick="Subs(3)" name="subs" checked \>3
+<input type='radio' onclick="Subs(4)" name="subs" \>4
+<br />
+Smoothness: 
+<input type='radio' onclick="Sm(0)" name="sm" \>0 
+<input type='radio' onclick="Sm(1)" name="sm" checked \>1
+<input type='radio' onclick="Sm(2)" name="sm" \>2
+<input type='radio' onclick="Sm(3)" name="sm" \>3
+</td></tr>
+</table>   
+<div id="scrawl" style="display:none"><br />To compare with still another script which<br />generates 3d perspective in canvas:<br />
+The picture below was generated with Scrawl<br />https://github.com/KaliedaRik/Scrawl-canvas<br /><img src="scrawl_3d_perspective.jpg"></div>
+     
+    </body>
+
+</html>
